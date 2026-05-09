@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QRコードスキャナー</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #1a1a2e;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    h2 {
+      font-size: 18px;
+      margin-bottom: 16px;
+      color: #a0c4ff;
+    }
+    #reader {
+      width: 100%;
+      max-width: 360px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #000;
+    }
+    #status {
+      margin-top: 16px;
+      font-size: 14px;
+      color: #aaa;
+      text-align: center;
+    }
+    #result {
+      margin-top: 12px;
+      padding: 12px 20px;
+      background: #28a745;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      display: none;
+      text-align: center;
+    }
+    #error {
+      margin-top: 12px;
+      padding: 12px 20px;
+      background: #dc3545;
+      border-radius: 8px;
+      font-size: 14px;
+      display: none;
+      text-align: center;
+    }
+    button {
+      margin-top: 16px;
+      padding: 10px 24px;
+      background: #1a73e7;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h2>📷 QRコードをカメラに向けてください</h2>
+  <div id="reader"></div>
+  <div id="status">カメラを起動中...</div>
+  <div id="result"></div>
+  <div id="error"></div>
+  <button onclick="window.close()">閉じる</button>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const resultEl = document.getElementById('result');
+    const errorEl = document.getElementById('error');
+
+    // URLパラメータからどのタイプ（nyuka/shukka/kakou）か受け取る
+    const params = new URLSearchParams(window.location.search);
+    const scanType = params.get('type') || 'nyuka';
+    const targetOrigin = params.get('origin') || '*';
+
+    function onScanSuccess(decodedText) {
+      statusEl.textContent = '読み取り完了！';
+      resultEl.textContent = '✅ ' + decodedText;
+      resultEl.style.display = 'block';
+
+      // 親ウィンドウ（GAS）にデータを送信
+      if (window.opener) {
+        window.opener.postMessage({
+          type: 'QR_SCAN_RESULT',
+          scanType: scanType,
+          result: decodedText
+        }, '*');
+        setTimeout(() => window.close(), 800);
+      } else {
+        statusEl.textContent = '読み取り完了（手動で閉じてください）';
+      }
+    }
+
+    async function startScanner() {
+      try {
+        const html5QrCode = new Html5Qrcode("reader");
+        const devices = await Html5Qrcode.getCameras();
+
+        if (devices && devices.length > 0) {
+          // 背面カメラ優先（モバイル用）、なければ最初のカメラ
+          const back = devices.find(d =>
+            d.label.toLowerCase().includes('back') ||
+            d.label.toLowerCase().includes('rear') ||
+            d.label.toLowerCase().includes('背面')
+          );
+          const cameraId = back ? back.id : devices[0].id;
+          statusEl.textContent = 'カメラ: ' + (back ? back.label : devices[0].label);
+
+          await html5QrCode.start(
+            cameraId,
+            { fps: 10 },
+            onScanSuccess,
+            () => {} // フレームごとのエラーは無視
+          );
+        } else {
+          // PCのウェブカメラなど、IDが取れない場合
+          await html5QrCode.start(
+            { facingMode: "environment" },
+            { fps: 10 },
+            onScanSuccess,
+            () => {}
+          );
+        }
+        statusEl.textContent = 'QRコードを画面に向けてください';
+      } catch (e) {
+        errorEl.textContent = 'エラー: ' + e.message;
+        errorEl.style.display = 'block';
+        statusEl.textContent = 'カメラの起動に失敗しました。';
+        console.error(e);
+      }
+    }
+
+    startScanner();
+  </script>
+</body>
+</html>
